@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#38bdf8">
+<link rel="apple-touch-icon" href="water-tank192.png">
+<title>Laundry Tank Monitor</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+body{background:#0f172a;color:#e2e8f0;padding:16px}
+.container{max-width:900px;margin:0 auto}
+h1{text-align:center;margin-bottom:16px;color:#38bdf8;font-size:1.8rem}
+.card{background:#1e293b;border-radius:12px;padding:16px;margin-bottom:16px;box-shadow:0 4px 6px rgba(0,0,0,0.3)}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:16px}
+@media(min-width:640px){.grid{grid-template-columns:repeat(4,1fr)}}
+.stat{text-align:center}
+.stat-value{font-size:1.8rem;font-weight:700;color:#38bdf8}
+.stat-label{font-size:0.8rem;color:#94a3b8;margin-top:4px}
+.tank{width:100%;height:250px;background:#0f172a;border:3px solid #334155;border-radius:10px;position:relative;overflow:hidden}
+.water{position:absolute;bottom:0;width:100%;background:linear-gradient(180deg,#0ea5e9,#0284c7);transition:height 1s ease}
+.water-label{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:1.8rem;font-weight:700;color:#fff;text-shadow:0 2px 4px rgba(0,0,0,0.5)}
+.status{text-align:center;padding:8px;border-radius:8px;margin-bottom:12px;font-weight:600;font-size:0.9rem}
+.online{background:#166534;color:#bbf7d0}
+.offline{background:#991b1b;color:#fecaca}
+.warning{background:#92400e;color:#fed7aa}
+.error{background:#7f1d1d;color:#fca5a5}
+.last-update{text-align:center;color:#64748b;font-size:0.8rem;margin-top:8px}
+canvas{max-height:220px}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>💧 Laundry Tank Monitor</h1>
+  <div id="status" class="status offline">Connecting...</div>
+
+  <div class="card">
+    <div class="grid">
+      <div class="stat">
+        <div class="stat-value" id="liters">--</div>
+        <div class="stat-label">Liters</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="percent">--%</div>
+        <div class="stat-label">Full</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="height">--</div>
+        <div class="stat-label">Height cm</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="distance">--</div>
+        <div class="stat-label">Distance cm</div>
+      </div>
+    </div>
+
+    <div class="tank">
+      <div class="water" id="water"><div class="water-label" id="waterLabel">--%</div></div>
+    </div>
+    <div class="last-update" id="lastUpdate">Last update: --</div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-bottom:12px;color:#cbd5e1;font-size:1.1rem">Last 4 Hours</h3>
+    <canvas id="chart"></canvas>
+  </div>
+</div>
+
+<script>
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxWu80tNUcDcXMAsdvBCGgIDDbwovShVhuUqQYNWDpTD9dH8zMyAckm93doqNK4z27O/exec';
+let chart;
+
+async function fetchData() {
+  try {
+    const res = await fetch(SCRIPT_URL);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    updateDisplay(data.current);
+    updateChart(data.history);
+
+    const statusEl = document.getElementById('status');
+    if (data.current.status === 'LOW') {
+      statusEl.className = 'status warning';
+      statusEl.textContent = '⚠️ WARNING - Tank Low';
+    } else if (data.current.status === 'FULL') {
+      statusEl.className = 'status warning';
+      statusEl.textContent = '⚠️ WARNING - Tank Full';
+    } else if (data.current.status === 'SENSOR_ERROR') {
+      statusEl.className = 'status error';
+      statusEl.textContent = '❌ Sensor Error';
+    } else {
+      statusEl.className = 'status online';
+      statusEl.textContent = '✅ Online';
+    }
+
+  } catch (err) {
+    document.getElementById('status').className = 'status offline';
+    document.getElementById('status').textContent = 'Offline - ' + err.message;
+  }
+}
+
+function updateDisplay(d) {
+  document.getElementById('liters').textContent = Math.round(d.liters);
+  document.getElementById('percent').textContent = d.percent.toFixed(1) + '%';
+  document.getElementById('height').textContent = d.height.toFixed(1);
+  document.getElementById('distance').textContent = d.distance.toFixed(1);
+
+  const water = document.getElementById('water');
+  water.style.height = d.percent + '%';
+  document.getElementById('waterLabel').textContent = d.percent.toFixed(0) + '%';
+
+  if (d.status === 'LOW') {
+    water.style.background = 'linear-gradient(180deg,#ef4444,#dc2626)';
+  } else if (d.status === 'FULL') {
+    water.style.background = 'linear-gradient(180deg,#8b5cf6,#7c3aed)';
+  } else if (d.status === 'SENSOR_ERROR') {
+    water.style.background = 'linear-gradient(180deg,#64748b,#475569)';
+  } else {
+    water.style.background = 'linear-gradient(180deg,#0ea5e9,#0284c7)';
+  }
+
+  const time = new Date(d.time).toLocaleString();
+  document.getElementById('lastUpdate').textContent = 'Last update: ' + time;
+}
+
+function updateChart(history) {
+  const ctx = document.getElementById('chart').getContext('2d');
+  const labels = history.map(h => new Date(h.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
+  const data = history.map(h => h.liters);
+
+  if (chart) chart.destroy();
+
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Liters',
+        data: data,
+        borderColor: '#38bdf8',
+        backgroundColor: 'rgba(56,189,248,0.1)',
+        tension: 0.3,
+        fill: true,
+        pointRadius: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
+        x: { ticks: { color: '#94a3b8', maxTicksLimit: 6 }, grid: { color: '#334155' } }
+      }
+    }
+  });
+}
+
+fetchData();
+setInterval(fetchData, 30000);
+</script>
+</body>
+</html>
